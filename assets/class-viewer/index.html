@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title></title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <input type="checkbox" id="sidebar-toggle" class="sidebar-toggle">
+    <label for="sidebar-toggle" class="sidebar-toggle-label" aria-label="菜单">
+      <span></span><span></span><span></span>
+    </label>
+    <div class="sidebar-overlay" onclick="document.getElementById('sidebar-toggle').checked=false"></div>
+    <nav id="sidebar">
+      <div class="scroll-progress" id="scroll-progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      <div id="sidebar-header">
+        <div id="course-badge"></div>
+        <h2 id="sidebar-title"></h2>
+        <div id="progress-summary">
+          <span id="progress-count">0/0</span>
+          <span id="progress-label">节已完成</span>
+        </div>
+      </div>
+      <ul id="lesson-nav">
+        <li class="nav-item" data-lesson="0">
+          <span class="nav-number nav-special nav-home">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5"/><path d="M5 11v8a2 2 0 002 2h10a2 2 0 002-2v-8"/><path d="M10 21v-7h4v7"/></svg>
+          </span>
+          <span class="nav-label">课程概览</span>
+        </li>
+      </ul>
+      <div id="sidebar-footer">
+        <a href="#" id="reset-progress">重置进度</a>
+      </div>
+    </nav>
+
+    <button id="sidebar-toggle-btn" title="折叠侧栏">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+
+    <main id="main">
+      <section id="overview" class="view active">
+        <div id="hero">
+          <h1></h1>
+          <p id="hero-desc"></p>
+          <div id="hero-meta">
+            <span></span>
+            <span>·</span>
+            <span></span>
+            <span>·</span>
+            <span></span>
+          </div>
+          <button id="start-btn">开始学习 →</button>
+        </div>
+        <div id="lesson-cards"></div>
+      </section>
+
+      <section id="lesson-view" class="view">
+        <div id="lesson-header">
+          <div id="lesson-number"></div>
+          <h2 id="lesson-title"></h2>
+        </div>
+        <div id="lesson-goal"></div>
+
+        <div id="objectives-block">
+          <h3>学习目标</h3>
+          <ul id="objectives-list"></ul>
+        </div>
+
+        <div id="lesson-body"></div>
+
+        <div id="flashcards-block">
+          <h3>闪卡复习</h3>
+          <p class="block-hint">点击卡片翻转查看答案</p>
+          <div id="flashcards-container" class="flashcards-container"></div>
+        </div>
+
+        <div id="quiz-block">
+          <h3>小测验</h3>
+          <div id="quiz-container" class="quiz-container"></div>
+        </div>
+
+        <div id="sources-block">
+          <h3>参考资料</h3>
+          <div id="sources-container"></div>
+        </div>
+
+        <div id="lesson-nav-buttons">
+          <button id="prev-btn" class="nav-btn">← 上一节</button>
+          <button id="next-btn" class="nav-btn">下一节 →</button>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="data.js"></script>
+  <script src="page.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-// class-viewer v1.0.0
+// class-viewer v2.0.0
 /* ═══════════════════════════════════════════════════════════════
    FROZEN — DO NOT MODIFY
    Shared JS runtime. COURSE is loaded from data.js (global var).
@@ -62,8 +62,60 @@
   }
 
   function setText(selector, text) {
-    var el = $(selector);
-    if (el) el.textContent = text;
+    var node = $(selector);
+    if (node) node.textContent = text;
+  }
+
+  /* 课程数据一律用 DOM 节点 + textContent 落到页面，不拼 innerHTML。
+     来源材料可能是不可信文本，拼字符串会让 data.js 变成注入面。 */
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function buildFlashcard(card, showIcons) {
+    var fc = el("div", "flashcard");
+    var inner = el("div", "flashcard-inner");
+    [["flashcard-front", card.front], ["flashcard-back", card.back]].forEach(function(pair) {
+      var face = el("div", pair[0]);
+      if (showIcons && card.icon) face.appendChild(el("span", "flashcard-icon", card.icon));
+      face.appendChild(document.createTextNode(pair[1]));
+      inner.appendChild(face);
+    });
+    fc.appendChild(inner);
+    fc.addEventListener("click", function() { fc.classList.toggle("flipped"); });
+    return fc;
+  }
+
+  // URL 解析器会先删掉制表符和换行、再裁掉首尾的控制符与空格。
+  // 不先做同样的归一化，`"  javascript:..."`、`"java\nscript:..."` 都能绕过协议判断。
+  function normalizeUrl(url) {
+    return String(url)
+      .replace(/[\t\n\r]/g, "")
+      .replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "");
+  }
+
+  // 只在 url 可用时才挂 href。空 url 会让 href 解析成当前页面，
+  // 脚本式协议则等于让 data.js 能塞一段可执行的链接。
+  function setSafeHref(a, url, newTab) {
+    var u = normalizeUrl(url);
+    if (!u || /^(javascript|data|vbscript):/i.test(u)) return false;
+    a.href = url;
+    if (newTab) {
+      a.target = "_blank";
+      a.rel = "noopener";
+    }
+    return true;
+  }
+
+  function buildSourceCard(s) {
+    var a = el("a", "source-card");
+    setSafeHref(a, s.url, true);
+    a.appendChild(el("span", "source-label", s.label));
+    a.appendChild(el("span", "source-url", s.url));
+    return a;
   }
 
   function scrollToSection(id) {
@@ -76,7 +128,7 @@
   }
 
   /* ── Schema version check ───────────────────────────────────── */
-  var SCHEMA_VERSION = "1.2.0";
+  var SCHEMA_VERSION = "2.0.0";
   if (!COURSE.schemaVersion) {
     console.warn("[lesson-generator] data.js 缺少 schemaVersion，可能与当前模板版本 (" + SCHEMA_VERSION + ") 不兼容");
   } else if (COURSE.schemaVersion !== SCHEMA_VERSION) {
@@ -106,15 +158,19 @@
   setText("#sources-block h3", label("sourcesTitle"));
   setText("#prev-btn", label("prevButton"));
   setText("#next-btn", label("nextButton"));
+  if (COURSE.backLink) {
+    var backBox = $("#back-link");
+    if (backBox) {
+      var backA = el("a", "back-link", COURSE.backLink.label);
+      setSafeHref(backA, COURSE.backLink.href, false);
+      backBox.appendChild(backA);
+    }
+  }
   if (typeof PAGE.renderHeroExtra === "function") {
     var extra = PAGE.renderHeroExtra(COURSE);
-    if (extra) {
+    if (extra && extra.nodeType) {
       var hero = $("#hero");
-      if (typeof extra === "string") {
-        hero.insertAdjacentHTML("beforeend", extra);
-      } else if (extra.nodeType) {
-        hero.appendChild(extra);
-      }
+      hero.appendChild(extra);
     }
   }
 
@@ -126,7 +182,8 @@
       li.dataset.lesson = l.id;
       li.dataset.title = l.title;
       var numStr = l.id < 10 ? "0" + l.id : String(l.id);
-      li.innerHTML = '<span class="nav-number">' + numStr + '</span><span class="nav-label">' + l.title + '</span>';
+      li.appendChild(el("span", "nav-number", numStr));
+      li.appendChild(el("span", "nav-label", l.title));
       li.addEventListener("click", function() { showLesson(l.id); });
       lessonNav.appendChild(li);
     });
@@ -138,10 +195,9 @@
       var card = document.createElement("div");
       card.className = "lesson-card";
       var cardNumStr = l.id < 10 ? "0" + l.id : String(l.id);
-      card.innerHTML =
-        '<div class="lesson-card-number">' + cardNumStr + '</div>' +
-        '<div class="lesson-card-title">' + l.title + '</div>' +
-        '<div class="lesson-card-concepts">' + l.concepts.join(" · ") + '</div>';
+      card.appendChild(el("div", "lesson-card-number", cardNumStr));
+      card.appendChild(el("div", "lesson-card-title", l.title));
+      card.appendChild(el("div", "lesson-card-concepts", l.concepts.join(" · ")));
       card.addEventListener("click", function() { showLesson(l.id); });
       lessonCards.appendChild(card);
     });
@@ -193,11 +249,10 @@
       labelEl.textContent = block.label;
       box.appendChild(labelEl);
       block.messages.forEach(function(m) {
-        var msg = document.createElement("div");
-        msg.className = "chat-msg";
-        msg.innerHTML =
-          '<div class="role ' + m.role + '">' + (m.role === "user" ? label("userRole") : label("aiRole")) + '</div>' +
-          '<div class="msg-text">' + m.text + '</div>';
+        var isUser = m.role === "user";
+        var msg = el("div", "chat-msg");
+        msg.appendChild(el("div", "role " + (isUser ? "user" : "ai"), isUser ? label("userRole") : label("aiRole")));
+        msg.appendChild(el("div", "msg-text", m.text));
         box.appendChild(msg);
       });
       body.appendChild(box);
@@ -229,13 +284,13 @@
       caseLabel.className = "case-example-label";
       caseLabel.textContent = block.label;
       caseBox.appendChild(caseLabel);
-      var scenario = document.createElement("div");
-      scenario.className = "case-example-scenario";
-      scenario.innerHTML = "<strong>" + label("scenarioLabel") + "</strong>" + block.scenario;
+      var scenario = el("div", "case-example-scenario");
+      scenario.appendChild(el("strong", "", label("scenarioLabel")));
+      scenario.appendChild(document.createTextNode(block.scenario));
       caseBox.appendChild(scenario);
-      var analysis = document.createElement("div");
-      analysis.className = "case-example-analysis";
-      analysis.innerHTML = "<strong>" + label("analysisLabel") + "</strong>" + block.analysis;
+      var analysis = el("div", "case-example-analysis");
+      analysis.appendChild(el("strong", "", label("analysisLabel")));
+      analysis.appendChild(document.createTextNode(block.analysis));
       caseBox.appendChild(analysis);
       body.appendChild(caseBox);
     } else if (block.type === "insight") {
@@ -291,18 +346,9 @@
         labels: PAGE_LABELS,
         showIcons: showIcons
       });
-      if (rendered) {
-        if (typeof rendered === "string") {
-          var wrapper = document.createElement("div");
-          wrapper.innerHTML = rendered;
-          while (wrapper.firstChild) {
-            if (wrapper.firstChild.nodeType === 1) wrapper.firstChild.dataset.blockType = block.type;
-            body.appendChild(wrapper.firstChild);
-          }
-        } else if (rendered.nodeType) {
-          rendered.dataset.blockType = block.type;
-          body.appendChild(rendered);
-        }
+      if (rendered && rendered.nodeType) {
+        rendered.dataset.blockType = block.type;
+        body.appendChild(rendered);
       }
     } else {
       console.warn("[lesson-generator] unsupported block type:", block.type);
@@ -398,16 +444,7 @@
 
       if (l.flashcards.length > 0) {
         l.flashcards.forEach(function(card) {
-          var fc = document.createElement("div");
-          fc.className = "flashcard";
-          var iconHTML = (showIcons && card.icon) ? '<span class="flashcard-icon">' + card.icon + '</span>' : '';
-          fc.innerHTML =
-            '<div class="flashcard-inner">' +
-              '<div class="flashcard-front">' + iconHTML + card.front + '</div>' +
-              '<div class="flashcard-back">' + iconHTML + card.back + '</div>' +
-            '</div>';
-          fc.addEventListener("click", function() { fc.classList.toggle("flipped"); });
-          fcContainer.appendChild(fc);
+          fcContainer.appendChild(buildFlashcard(card, showIcons));
         });
       } else {
         fcBlock.style.display = "none";
@@ -424,13 +461,7 @@
 
       if (l.sources.length > 0) {
         l.sources.forEach(function(s) {
-          var a = document.createElement("a");
-          a.className = "source-card";
-          a.href = s.url;
-          a.target = "_blank";
-          a.rel = "noopener";
-          a.innerHTML = '<span class="source-label">' + s.label + '</span><span class="source-url">' + s.url + '</span>';
-          sourcesContainer.appendChild(a);
+          sourcesContainer.appendChild(buildSourceCard(s));
         });
       } else {
         sourcesBlock.style.display = "none";
@@ -468,16 +499,7 @@
     if (l.flashcards.length > 0) {
       $("#flashcards-block").style.display = "block";
       l.flashcards.forEach(function(card) {
-        var fc = document.createElement("div");
-        fc.className = "flashcard";
-        var iconHTML = (showIcons && card.icon) ? '<span class="flashcard-icon">' + card.icon + '</span>' : '';
-        fc.innerHTML =
-          '<div class="flashcard-inner">' +
-            '<div class="flashcard-front">' + iconHTML + card.front + '</div>' +
-            '<div class="flashcard-back">' + iconHTML + card.back + '</div>' +
-          '</div>';
-        fc.addEventListener("click", function() { fc.classList.toggle("flipped"); });
-        fcContainer.appendChild(fc);
+        fcContainer.appendChild(buildFlashcard(card, showIcons));
       });
     } else {
       $("#flashcards-block").style.display = "none";
@@ -505,13 +527,7 @@
     if (l.sources.length > 0) {
       $("#sources-block").style.display = "block";
       l.sources.forEach(function(s) {
-        var a = document.createElement("a");
-        a.className = "source-card";
-        a.href = s.url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.innerHTML = '<span class="source-label">' + s.label + '</span><span class="source-url">' + s.url + '</span>';
-        srcContainer.appendChild(a);
+        srcContainer.appendChild(buildSourceCard(s));
       });
     } else {
       $("#sources-block").style.display = "none";
@@ -527,15 +543,12 @@
     questions.forEach(function(q, qi) {
       var div = document.createElement("div");
       div.className = "quiz-question";
-      div.innerHTML = '<div class="q-text">' + (qi + 1) + '. ' + q.question + '</div>';
+      div.appendChild(el("div", "q-text", (qi + 1) + ". " + q.question));
 
-      var feedbackDiv = document.createElement("div");
-      feedbackDiv.className = "quiz-feedback";
+      var feedbackDiv = el("div", "quiz-feedback");
 
       q.options.forEach(function(opt, oi) {
-        var btn = document.createElement("button");
-        btn.className = "quiz-option";
-        btn.textContent = String.fromCharCode(65 + oi) + '. ' + opt.text;
+        var btn = el("button", "quiz-option", String.fromCharCode(65 + oi) + '. ' + opt.text);
         btn.addEventListener("click", function() {
           if (btn.classList.contains("disabled")) return;
 
@@ -570,21 +583,21 @@
     var scoreDiv = document.createElement("div");
     scoreDiv.className = "final-score";
     scoreDiv.style.display = "none";
-    scoreDiv.innerHTML = '<div class="score-number" id="final-score-num">0</div><div class="score-label">/' + total + label("finalScoreSuffix") + '</div>';
+    var scoreNum = el("div", "score-number", "0");
+    scoreNum.id = "final-score-num";
+    scoreDiv.appendChild(scoreNum);
+    scoreDiv.appendChild(el("div", "score-label", "/" + total + label("finalScoreSuffix")));
     container.appendChild(scoreDiv);
 
     questions.forEach(function(q, qi) {
       var div = document.createElement("div");
       div.className = "quiz-question";
-      div.innerHTML = '<div class="q-text">' + (qi + 1) + '. ' + q.question + '</div>';
+      div.appendChild(el("div", "q-text", (qi + 1) + ". " + q.question));
 
-      var feedbackDiv = document.createElement("div");
-      feedbackDiv.className = "quiz-feedback";
+      var feedbackDiv = el("div", "quiz-feedback");
 
       q.options.forEach(function(opt, oi) {
-        var btn = document.createElement("button");
-        btn.className = "quiz-option";
-        btn.textContent = String.fromCharCode(65 + oi) + '. ' + opt.text;
+        var btn = el("button", "quiz-option", String.fromCharCode(65 + oi) + '. ' + opt.text);
         btn.addEventListener("click", function() {
           if (btn.classList.contains("disabled")) return;
 

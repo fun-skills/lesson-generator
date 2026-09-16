@@ -1,6 +1,6 @@
 # COURSE Schema
 
-> 何时阅读：写 `data.js` 前阅读。当前 schema 版本：`1.2.0`。
+> 何时阅读：写 `data.js` 前阅读。当前 schema 版本：`2.0.0`。
 
 一个 schema 同时服务 general 和 codebase 课程。`profile` 决定分流，`style` 决定配色。
 
@@ -8,7 +8,7 @@
 
 ```ts
 {
-  schemaVersion: string,   // "1.2.0"
+  schemaVersion: string,   // "2.0.0"
   profile: string,          // "general"（默认）| "codebase"
   style: string,            // "default"（默认）| "apple-blue"
   showIcons?: boolean,      // false 则全局隐藏 emoji 图标（默认 true）
@@ -18,6 +18,7 @@
   badge: string,            // 侧栏上下文标签
   description: string,      // 2-3 句课程描述
   duration: string,         // 预估学习时长（分钟，如 "25"）
+  backLink?: BackLink,      // 侧栏顶部的返回链接；不写则不渲染
   context?: Context,        // 可选展示信息；如写不能含 type
   lessons: Lesson[]
 }
@@ -35,6 +36,21 @@
 - `"default"`（暖橙，缺省）
 - `"apple-blue"`（苹果蓝）
 - 不支持第三套配色。
+
+### backLink
+
+可选。侧栏顶部的一个返回链接，用于把课程挂回站点里的课程列表：
+
+```ts
+{
+  href: string,     // 站内路径或完整 URL
+  label: string     // 显示文字，如 "← 课程首页"
+}
+```
+
+- 不写就完全不渲染，也不占位置。
+- 两个字段都必填，没有默认值。
+- `href` 不能用 `javascript:` / `data:` / `vbscript:`，运行时会退化成纯文字。
 
 ### context
 
@@ -86,7 +102,7 @@ interface Lesson {
 }
 ```
 
-最后一节（最大 id）自动识别为总复习，使用累积评分。
+最后一节（`id === COURSE.lessons.length`）自动识别为总复习，使用累积评分。
 
 ## 内容块类型
 
@@ -113,17 +129,26 @@ interface Lesson {
 | 架构 | `{ type: "architecture", nodes: [{id, title, desc}], edges: [{from, to, label}] }` | 角色来自真实文件/模块/组件/服务；边含义具体；不画与源码不一致的架构 |
 | 调试案例 | `{ type: "debug-case", label, symptom, likelyCause, firstFiles, fixHint }` | 症状像真实反馈；`firstFiles` 必须是真实文件；`fixHint` 指导排查方向，不编造修复 |
 
-## 测验规则
+## 闪卡与测验
 
-- 每题有且仅有一个正确选项（`options` 是对象数组，不是字符串数组）。
-- 每个选项必须包含 `feedback`（选中后显示的反馈）。
+数量和总复习的约定写在上面 `Lesson` 的字段注释里，这里只补内容规则。
+
+闪卡：
+
+- 测关键概念，不测细枝末节。
+- 正面问术语或判断，背面用白话解释，且必须能独立读懂。
+
+测验：
+
+- 每题有且仅有一个正确选项（`options` 是对象数组，不是字符串数组），其余是合理干扰项。
+- 每个选项必须包含 `feedback`（选中后显示的反馈）；错误选项的 feedback 也要教一点新东西，不能只说「答错了」。
 - 选项自动带 A. B. C. D. 前缀（运行时内置）。
-- 内容节每节 1-2 题，总复习 4 题以上。
 - general：测关键概念理解。
 - codebase：优先考调试、架构、追踪和 AI 指挥，不考记忆。
 
 ## sources 规则
 
 - 每节课都写 `sources`，无来源写 `[]`。
+- 必须真实可追溯，不要编造链接或文件路径。学习者按来源能找到对应材料。
 - general：URL 或来源说明，真实可点击。
-- codebase：真实 repo 文件路径，最好带行号。
+- codebase：真实 repo 文件路径，最好带行号，学习者打开文件能看到同样的片段。

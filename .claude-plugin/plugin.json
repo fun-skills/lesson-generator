@@ -1,5 +1,6 @@
 {
   "name": "lesson-generator",
+  "version": "2.0.0",
   "skills": [
     "./"
   ]

@@ -11,10 +11,10 @@
 // Run: node scripts/upgrade-class-viewer.mjs <subcommand> [args]
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import vm from "node:vm";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { validateCourse } from "./lib/validate.mjs";
 import { migrateCourse, CURRENT_VERSION } from "./lib/migrate.mjs";
 
@@ -23,8 +23,12 @@ const SKILL_DIR = resolve(__dirname, "..");
 const TEMPLATE_DIR = join(SKILL_DIR, "assets", "class-viewer");
 const FROZEN = ["index.html", "styles.css", "script.js", "page.js"];
 
-function sh(cmd) {
-  return execSync(cmd, { stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
+// agent-browser 一律走 argv，不过 shell。
+// 课程目录名会进到参数里，拼 shell 字符串等于把目录名当命令执行。
+// 输出是 JSON：布尔返回 true，字符串返回 "..."。
+function ab(args) {
+  const raw = execFileSync("agent-browser", args, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+  try { return JSON.parse(raw); } catch { return raw; }
 }
 
 function loadCourse(file) {
@@ -79,24 +83,43 @@ function validateStatic(dir) {
 function waitForReady() {
   for (let i = 0; i < 20; i++) {
     try {
-      if (sh('agent-browser eval "ClassViewerDebug != null"') === "true") return true;
+      if (ab(["eval", "ClassViewerDebug != null"]) === true) return true;
     } catch { /* page not ready */ }
-    try { sh('agent-browser wait 100'); } catch { /* ignore */ }
+    try { ab(["wait", "100"]); } catch { /* ignore */ }
   }
   return false;
 }
 
+// 逐节渲染，检查：渲染过程没抛异常、block 数对得上、没有 unsupported block。
+// 只渲染第 1 节会漏掉后续课时里的运行时错误。
 function validateRender(dir) {
   const index = resolve(join(dir, "index.html"));
   if (!existsSync(index)) { console.error(`${dir}: 无 index.html，先 copy`); return false; }
+  const course = loadCourse(join(resolve(dir), "data.js"));
+  if (!course || !Array.isArray(course.lessons)) { console.error(`${dir}: 读不到课程数据`); return false; }
   try {
-    sh(`agent-browser open "file://${index}"`);
+    ab(["open", pathToFileURL(index).href]);
   } catch (e) { console.error(`${dir}: agent-browser 打开失败: ${e.message}`); return false; }
-  if (!waitForReady()) { console.error(`${dir}: ClassViewerDebug 未就绪`); return false; }
-  const out = sh('agent-browser eval "(ClassViewerDebug.goLesson(1), ClassViewerDebug.snapshot().unsupportedBlocks.length===0 && ClassViewerDebug.snapshot().blocks.length>0)"');
-  const okRender = out === "true";
-  console.log(`${dir}: render ${okRender ? "pass" : "fail"}`);
-  return okRender;
+  if (!waitForReady()) { console.error(`${dir}: ClassViewerDebug 未就绪（页面初始化就抛异常）`); return false; }
+
+  let ok = true;
+  for (const l of course.lessons) {
+    const expr = `(() => {
+  try { window.ClassViewerDebug.goLesson(${l.id}) } catch (e) { return "渲染抛异常: " + e.message }
+  var scope = window.ClassViewerDebug.getLessonScope(${l.id})
+  if (!scope) return "拿不到该节 DOM"
+  var n = scope.querySelectorAll("[data-block-type]").length
+  if (n !== ${l.body.length}) return "block 数 " + n + " != " + ${l.body.length}
+  var u = window.ClassViewerDebug.snapshot().unsupportedBlocks.length
+  return u === 0 ? "ok" : "unsupported block " + u
+})()`;
+    let out;
+    try { out = ab(["eval", expr]); }
+    catch (e) { out = "eval 失败: " + e.message; }
+    if (out !== "ok") { console.error(`  ${dir} L${l.id}: ${out}`); ok = false; }
+  }
+  console.log(`${dir}: render ${course.lessons.length} 节 ${ok ? "pass" : "fail"}`);
+  return ok;
 }
 
 function validateOne(dir, { render }) {
@@ -163,14 +186,20 @@ function main(argv) {
   const dirs = rest.filter((a) => !a.startsWith("--"));
   if (dirs.length === 0) { console.error(`${cmd} 需要至少一个目录`); return 2; }
 
+  const run = {
+    copy: (d) => copyOne(d),
+    upgrade: (d) => upgradeOne(d),
+    validate: (d) => validateOne(d, { render }),
+    all: (d) => allOne(d),
+  }[cmd];
+  if (!run) { console.error(`未知子命令：${cmd}`); usage(); return 2; }
+
   let allOk = true;
   for (const dir of dirs) {
-    let ok;
-    if (cmd === "copy") ok = copyOne(dir);
-    else if (cmd === "upgrade") ok = upgradeOne(dir);
-    else if (cmd === "validate") ok = validateOne(dir, { render });
-    else if (cmd === "all") ok = allOne(dir);
-    else { console.error(`未知子命令：${cmd}`); usage(); return 2; }
+    // 单个目录出意外不能中断其余目录的校验。
+    let ok = false;
+    try { ok = run(dir); }
+    catch (e) { console.error(`${dir}: 意外异常: ${e.message}`); }
     if (!ok) allOk = false;
   }
   return allOk ? 0 : 1;

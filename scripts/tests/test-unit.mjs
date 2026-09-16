@@ -37,7 +37,7 @@ function base() { return { title: "T", badge: "b", description: "d.", duration: 
 function testMigrate() {
   const old = { ...base(), schemaVersion: "1.1.0", style: "default-style", context: { type: "codebase", title: "X", path: "p", summary: "s", tags: [] } };
   const r = migrateCourse(old);
-  ok("migrate: 1.1.0 codebase → 1.2.0", r.changed && r.from === "1.1.0" && r.to === CURRENT_VERSION);
+  ok("migrate: 1.1.0 codebase → current", r.changed && r.from === "1.1.0" && r.to === CURRENT_VERSION);
   ok("migrate: style default-style → default", old.style === "default");
   ok("migrate: profile auto codebase", old.profile === "codebase");
   ok("migrate: context.type removed", !("type" in old.context));
@@ -119,12 +119,119 @@ function testSchemaBoundary() {
 
   const ukb = [L({ body: [{ type: "custom", text: "x" }] })];
   ok("schema: rejects unknown block", validateCourse("v", { ...b, lessons: ukb }).failed > 0);
+
+  const noConcepts = [L({ concepts: undefined })];
+  ok("schema: rejects missing concepts", validateCourse("v", { ...b, lessons: noConcepts }).failed > 0);
+
+  const codeHtml = [L({ body: [{ type: "code-example", label: "x", lang: "html", code: '<div class="a">hi</div>' }] })];
+  ok("schema: allows html inside code", validateCourse("v", { ...b, lessons: codeHtml }).failed === 0);
+
+  const nestedHtml = [L({ body: [{ type: "ai-dialog", label: "d", messages: [{ role: "user", text: "看 <b>x</b>" }] }] })];
+  ok("schema: rejects inline html in nested block fields", validateCourse("v", { ...b, lessons: nestedHtml }).failed > 0);
+
+  const titleHtml = [L({ title: "L <b>x</b>" })];
+  ok("schema: rejects inline html in lesson title", validateCourse("v", { ...b, lessons: titleHtml }).failed > 0);
+
+  // 渲染时会抛异常的 block 形状
+  const noMessages = [L({ body: [{ type: "ai-dialog", label: "broken" }] })];
+  ok("schema: rejects ai-dialog without messages", validateCourse("v", { ...b, lessons: noMessages }).failed > 0);
+
+  const badItems = [L({ body: [{ type: "list-block", items: [{ title: "t" }] }] })];
+  ok("schema: rejects list-block item without desc", validateCourse("v", { ...b, lessons: badItems }).failed > 0);
+
+  const noExplanation = [L({ body: [{ type: "code-translation", file: "a.ts:1", code: "x" }] })];
+  ok("schema: rejects code-translation without explanation", validateCourse("v", { ...b, lessons: noExplanation }).failed > 0);
+
+  const noQuestion = [L({ quiz: [{ options: [{ text: "a", correct: true, feedback: "f" }] }] })];
+  ok("schema: rejects quiz without question", validateCourse("v", { ...b, lessons: noQuestion }).failed > 0);
+
+  const badCard = [L({ flashcards: [{ front: "f" }] })];
+  ok("schema: rejects flashcard without back", validateCourse("v", { ...b, lessons: badCard }).failed > 0);
+
+  // HTML 正则的绕过与误报
+  for (const [name, text] of [["<br/>", "a <br/> b"], ["注释", "<!--x-->"], ["自闭合斜杠", "<svg/onload=alert(1)>"], ["闭合标签", "x </div>"]]) {
+    const t = [L({ body: [{ type: "p", text }] })];
+    ok(`schema: rejects html (${name})`, validateCourse("v", { ...b, lessons: t }).failed > 0);
+  }
+
+  const ltProse = [L({ body: [{ type: "p", text: "预算 < 100 元" }] })];
+  ok("schema: allows bare < in prose", validateCourse("v", { ...b, lessons: ltProse }).failed === 0);
+
+  // 内容在讲 XML 标签本身：`</邮件>` 的 `</` 后面不是 ASCII 字母，不算 HTML
+  const xmlTag = [L({ title: "框材料", body: [{ type: "p", text: "用 <邮件>...</邮件> 包裹原文" }] })];
+  ok("schema: allows non-ascii tag in prose", validateCourse("v", { ...b, lessons: xmlTag }).failed === 0);
+
+  const urlHtml = [L({ sources: [{ label: "s", url: "<img src=x onerror=alert(1)>" }] })];
+  ok("schema: rejects html in sources url", validateCourse("v", { ...b, lessons: urlHtml }).failed > 0);
+
+  // 脚本式 URL：空白和换行不能绕过协议判断
+  for (const [name, url] of [
+    ["裸 javascript", "javascript:alert(1)"],
+    ["前置空格", " javascript:alert(1)"],
+    ["中间换行", "java\nscript:alert(1)"],
+    ["制表符", "java\tscript:alert(1)"],
+    ["前后控制符", "javascript:alert(1)"],
+    ["vbscript", "vbscript:msgbox(1)"],
+  ]) {
+    const t = [L({ sources: [{ label: "s", url }] })];
+    ok(`schema: rejects dangerous url (${name})`, validateCourse("v", { ...b, lessons: t }).failed > 0);
+  }
+
+  for (const [name, url] of [["https", "https://example.com/a"], ["mailto", "mailto:a@b.c"], ["仓库路径", "src/a.ts:12-24"], ["短路径", "a.ts:1"]]) {
+    const t = [L({ sources: [{ label: "s", url }] })];
+    ok(`schema: allows normal source (${name})`, validateCourse("v", { ...b, lessons: t }).failed === 0);
+  }
+
+  // 来源说明可以没有链接（schema 契约里 general 允许「URL 或来源说明」）
+  const noUrl = [L({ sources: [{ label: "宝玉《图解 Skill》第一章", url: "" }] })];
+  ok("schema: allows empty source url", validateCourse("v", { ...b, lessons: noUrl }).failed === 0);
+}
+
+function testBackLink() {
+  const L = () => ({ id: 1, title: "L", goal: "g", concepts: [], objectives: [], body: [], flashcards: [], quiz: [], sources: [] });
+  const base = { schemaVersion: CURRENT_VERSION, profile: "general", style: "default", title: "T", badge: "b", description: "d.", duration: "5", lessons: [L()] };
+
+  ok("backLink: 不写合法", validateCourse("v", base).failed === 0);
+  ok("backLink: 正常写法合法", validateCourse("v", { ...base, backLink: { href: "/courses", label: "← 课程首页" } }).failed === 0);
+  ok("backLink: href 为空判失败", validateCourse("v", { ...base, backLink: { href: "", label: "← 首页" } }).failed > 0);
+  ok("backLink: label 为空判失败", validateCourse("v", { ...base, backLink: { href: "/x", label: "" } }).failed > 0);
+  ok("backLink: javascript: 判失败", validateCourse("v", { ...base, backLink: { href: "javascript:alert(1)", label: "x" } }).failed > 0);
+  ok("backLink: 空白绕过判失败", validateCourse("v", { ...base, backLink: { href: " java\nscript:alert(1)", label: "x" } }).failed > 0);
+  ok("backLink: 缺字段判失败", validateCourse("v", { ...base, backLink: { href: "/x" } }).failed > 0);
+  ok("backLink: 不是对象判失败", validateCourse("v", { ...base, backLink: "/x" }).failed > 0);
+}
+
+// 校验器的职责是报问题，遇到畸形节点不能自己抛异常。
+function testMalformedInput() {
+  const base = { schemaVersion: CURRENT_VERSION, profile: "general", style: "default", title: "T", badge: "b", description: "d.", duration: "5" };
+  const L = (o) => ({ id: 1, title: "L", goal: "g", concepts: [], objectives: [], body: [], flashcards: [], quiz: [], sources: [], ...o });
+  const cases = [
+    ["COURSE 是 null", null],
+    ["COURSE 是字符串", "nope"],
+    ["lessons 是 null", { ...base, lessons: [null] }],
+    ["lesson 是字符串", { ...base, lessons: ["x"] }],
+    ["block 是 null", { ...base, lessons: [L({ body: [null] })] }],
+    ["quiz 是 null", { ...base, lessons: [L({ quiz: [null] })] }],
+    ["flashcard 是 null", { ...base, lessons: [L({ flashcards: [null] })] }],
+    ["source 是 null", { ...base, lessons: [L({ sources: [null] })] }],
+    ["flow step 是 null", { ...base, lessons: [L({ body: [{ type: "flow", label: "f", nodes: ["A"], steps: [null] }] })] }],
+    ["context 是字符串", { ...base, context: "x", lessons: [L({})] }],
+    ["concepts 是 null", { ...base, lessons: [L({ concepts: null })] }],
+  ];
+  for (const [name, course] of cases) {
+    let thrown = null;
+    let failed = null;
+    try { failed = validateCourse("v", course).failed; } catch (e) { thrown = e.message; }
+    ok(`malformed: ${name} 返回失败而非抛异常`, thrown === null && failed > 0, thrown || `failed=${failed}`);
+  }
 }
 
 console.log("== unit tests ==");
 testScriptSyntax();
 runValidate("data.js", join(ASSETS, "data.js"), { allowEmptyLessons: true });
 testSchemaBoundary();
+testBackLink();
+testMalformedInput();
 testMigrate();
 testPageViewMode();
 

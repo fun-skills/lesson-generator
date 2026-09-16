@@ -74,6 +74,15 @@ body {
   transition: transform 0.25s ease;
 }
 
+/* 由 COURSE.backLink 驱动；不配置时 #back-link 是空的，flex 列里占 0 高度 */
+.back-link {
+  display: block;
+  padding: 12px 20px 8px;
+  font-size: 13px;
+  color: var(--sidebar-fg);
+  text-decoration: none;
+}
+
 #sidebar-header {
   padding: 24px 20px 16px;
   border-bottom: 1px solid var(--sidebar-border);
@@ -139,7 +148,9 @@ body {
   font-size: 0.875rem;
 }
 .nav-item:hover { background: rgba(255,255,255,0.06); }
-.nav-item.active { border-right: 3px solid var(--accent); }
+/* 选中项已经有右侧竖条指示，悬停时不再叠一层背景 */
+.nav-item.active { background: transparent; border-right: 3px solid var(--accent); }
+
 .nav-number {
   width: 28px; height: 28px;
   border-radius: 50%;

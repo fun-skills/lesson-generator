@@ -1,4 +1,4 @@
-// class-viewer v1.0.0
+// class-viewer v2.0.0
 /* ═══════════════════════════════════════════════════════════════
    PAGE ADAPTER - Frozen per skill.
    Single page config for both general and codebase courses.

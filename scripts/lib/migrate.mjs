@@ -1,7 +1,7 @@
 // Version-keyed migrations for lesson-generator data.js COURSE objects.
 // Apply migrateCourse(course) to bring a course up to CURRENT_VERSION.
 
-export const CURRENT_VERSION = "1.2.0";
+export const CURRENT_VERSION = "2.0.0";
 
 // 1.1.0 -> 1.2.0: profile field, style rename, context.type removal.
 function apply_1_1_0_to_1_2_0(course, warnings) {
@@ -27,9 +27,13 @@ function apply_1_1_0_to_1_2_0(course, warnings) {
   }
 }
 
+// 1.2.0 -> 2.0.0: schema 结构未变，只是把 schema 版本和技能版本对齐。
+const apply_1_2_0_to_2_0_0 = () => {};
+
 // Ordered list of migrations. Each migrates from `from` to `to`.
 export const MIGRATIONS = [
   { from: "1.1.0", to: "1.2.0", apply: apply_1_1_0_to_1_2_0 },
+  { from: "1.2.0", to: "2.0.0", apply: apply_1_2_0_to_2_0_0 },
 ];
 
 // Mutates course in place, applying migrations in version order until current.

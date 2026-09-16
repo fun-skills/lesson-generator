@@ -38,12 +38,11 @@ assert_num() {
 }
 
 # Clone class-viewer into tmp and write a small general course.
-node "$SKILL_DIR/scripts/spaceclone.mjs" \
-  --template-dir "$SKILL_DIR/assets/class-viewer" --here --in "$TMP" >/dev/null || { echo "spaceclone failed"; exit 2; }
+node "$SKILL_DIR/scripts/init-course.mjs" "$TMP" >/dev/null || { echo "init-course failed"; exit 2; }
 
 cat > "$TMP/data.js" <<'EOF'
 var COURSE = {
-  schemaVersion: "1.2.0", profile: "general", style: "default",
+  schemaVersion: "2.0.0", profile: "general", style: "default",
   showIcons: true, showQuiz: true, showFinalQuiz: true,
   title: "通用课程", badge: "通用", description: "一门普通主题课程。", duration: "10",
   lessons: [
@@ -58,7 +57,7 @@ var COURSE = {
         { text: "A", correct: true, feedback: "对" },
         { text: "B", correct: false, feedback: "错" }
       ] }],
-      sources: [{ label: "来源", url: "https://example.com" }] },
+      sources: [{ label: "来源", url: "https://example.com" }, { label: "危险", url: " javascript:alert(1)" }, { label: "无链接", url: "" }] },
     { id: 2, title: "总复习", goal: "巩固。", concepts: [],
       objectives: ["复习"], body: [{ type: "p", text: "复习内容。" }],
       flashcards: [], quiz: [{ question: "复选题？", options: [
@@ -78,11 +77,17 @@ python3 -m http.server "$PORT" --directory "$TMP" >/dev/null 2>&1 &
 SERVER_PID=$!
 sleep 1
 
+# VI fixture：模板 + vi-data.js 当数据源（和 scripts/dev-vi.sh 同一套做法）
+mkdir -p "$TMP/vi"
+cp "$SKILL_DIR/assets/class-viewer/"{index.html,styles.css,script.js,page.js} "$TMP/vi/"
+cp "$SKILL_DIR/assets/class-viewer-vi/vi-data.js" "$TMP/vi/data.js"
+
 echo "== e2e: codebase VI (continuous) =="
-agent-browser open "file://$SKILL_DIR/assets/class-viewer-vi/vi.html" >/dev/null 2>&1
+agent-browser open "file://$TMP/vi/index.html" >/dev/null 2>&1
 assert_true "continuous-mode body class" "document.body.classList.contains('continuous-mode')"
 assert_true "theme-default body class" "document.body.classList.contains('theme-default')"
 assert_true "context box rendered" "!!document.querySelector('.context-box')"
+assert_true "backLink rendered" "document.querySelector('#back-link .back-link').getAttribute('href')==='/courses' && document.querySelector('#back-link .back-link').textContent==='← 课程首页'"
 assert_num "all 5 code block types render" "document.querySelectorAll('[data-block-type=\"code-translation\"],[data-block-type=\"actor-chat\"],[data-block-type=\"flow\"],[data-block-type=\"architecture\"],[data-block-type=\"debug-case\"]').length" 5
 assert_true "playActorChat works" "ClassViewerDebug.playActorChat(0).ok===true"
 assert_true "resetActorChat works" "ClassViewerDebug.resetActorChat(0).ok===true"
@@ -97,11 +102,17 @@ agent-browser open "$BASE/index.html" >/dev/null 2>&1
 assert_true "no continuous-mode (paginated)" "!document.body.classList.contains('continuous-mode')"
 assert_true "theme-default body class" "document.body.classList.contains('theme-default')"
 assert_true "no context box (general)" "!document.querySelector('.context-box')"
+assert_true "no backLink when unset" "document.getElementById('back-link').children.length===0"
 assert_true "start button present" "!!document.getElementById('start-btn')"
 agent-browser eval "ClassViewerDebug.goLesson(1)" >/dev/null 2>&1
 assert_true "next-btn visible after goLesson" "getComputedStyle(document.getElementById('next-btn')).display!=='none'"
 assert_true "insight block renders after goLesson" "document.querySelectorAll('[data-block-type=\"insight\"]').length>0"
 assert_true "list-block renders after goLesson" "document.querySelectorAll('[data-block-type=\"list-block\"]').length>0"
+# 前导空白的 javascript: 被浏览器规范化后仍是脚本链接，不能出现在 href 上
+assert_true "dangerous url is not linkable" "(() => { var as=document.querySelectorAll('.source-card'); for (var i=0;i<as.length;i++){ var el=as[i].querySelector('.source-url'); if (el && el.textContent.indexOf('javascript:')>=0) return as[i].getAttribute('href')===null } return false })()"
+assert_true "normal source keeps href" "(() => { var as=document.querySelectorAll('.source-card'); for (var i=0;i<as.length;i++){ var el=as[i].querySelector('.source-url'); if (el && el.textContent.indexOf('https://')===0) return as[i].getAttribute('href')!==null } return false })()"
+# 来源说明可以没有链接：空 url 不能变成指向课程自己的 href
+assert_true "empty source url stays unlinked" "(() => { var as=document.querySelectorAll('.source-card'); for (var i=0;i<as.length;i++){ if (as[i].querySelector('.source-url').textContent==='') return as[i].getAttribute('href')===null } return false })()"
 assert_true "flipFlashcard works (paginated)" "ClassViewerDebug.flipFlashcard(0).flippedFlashcardsCount>=1"
 assert_true "answerQuiz works (paginated)" "ClassViewerDebug.answerQuiz(0,0).quizAnsweredCount>=1"
 assert_num "course viewMode paginated" "ClassViewerDebug.course().viewMode==='paginated'?1:0" 1
@@ -114,7 +125,7 @@ assert_true "no theme-default when apple-blue" "!document.body.classList.contain
 echo "== e2e: upgrade tool (copy + upgrade + validate) =="
 OLD="$TMP/old"
 mkdir -p "$OLD"
-node "$SKILL_DIR/scripts/spaceclone.mjs" --template-dir "$SKILL_DIR/assets/class-viewer" --here --in "$OLD" >/dev/null 2>&1
+node "$SKILL_DIR/scripts/init-course.mjs" "$OLD" >/dev/null 2>&1
 cat > "$OLD/data.js" <<'OLDEOF'
 var COURSE = { schemaVersion:"1.1.0", style:"default-style", showIcons:true, showQuiz:true, showFinalQuiz:true,
   title:"旧课", badge:"旧", description:"一个旧 schema 课程。", duration:"10",

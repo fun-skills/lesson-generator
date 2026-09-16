@@ -1,12 +1,13 @@
 /* VI DATA - visual inspection sample. NOT a course template. DO NOT copy for course generation. */
 
 var COURSE = {
-  schemaVersion: "1.2.0",
+  schemaVersion: "2.0.0",
   profile: "codebase",
   style: "default",
   showIcons: true,
   showQuiz: true,
   showFinalQuiz: true,
+  backLink: { href: "/courses", label: "← 课程首页" },
   title: "VI - 全组件检查",
   badge: "视觉检查",
   description: "覆盖所有通用 block 和代码库扩展 block 的视觉检查页面。",
